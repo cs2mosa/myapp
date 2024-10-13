@@ -36,7 +36,7 @@ if api_key:
                     :parameter text: text to process
                     :returns the processed text tailored to user's need"""
         try:
-            prompting = f"as an expert in undergraduate courses,{request}: here is the text: \n\n{text}"
+            prompting = f"{request}:\n\n{text}"
             returned_text = model.invoke(prompting)
             return returned_text.content
         except Exception:
@@ -95,7 +95,7 @@ if api_key:
                     result = agent_exec.invoke({"input": user_input})
                 st.write(result['output'])
             except Exception:
-                st.error(f"An error occurred while processing your request")
+                st.error(f"An error occurred while processing your request, maybe you exhausted your api, wait so it can recharge")
         else:
             st.warning("Please enter a question or YouTube URL.")
 else:
