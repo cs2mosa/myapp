@@ -11,6 +11,7 @@ st.set_page_config(page_title="ASU study partner", page_icon="🎥")
 
 st.title("ASU study partner is here for you!")
 st.subheader("AI-powered chatbot to process YouTube videos and texts")
+st.text("@mosa abdulaziz, for contact: 0122 586 2134 ")
 st.text("powered by gemini pro")
 
 prompt = ChatPromptTemplate.from_messages([
