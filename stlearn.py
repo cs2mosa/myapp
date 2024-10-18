@@ -1,103 +1,111 @@
-import streamlit as st
-import youtube_transcript_api
+from youtube_transcript_api import YouTubeTranscriptApi
 from langchain.prompts import ChatPromptTemplate
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.agents import tool
 from langchain.agents import AgentExecutor, create_tool_calling_agent
-from youtube_transcript_api import YouTubeTranscriptApi
 from pytube import extract
+import youtube_transcript_api
 
-st.set_page_config(page_title="ASU study partner", page_icon="🎥")
+class YouTubeProcessor:
+    def __init__(self, api_key):
+        self.prompt = ChatPromptTemplate.from_messages([
+            ("system", "You are a helpful assistant."),
+            ("placeholder", "{chat_history}"),
+            ("human", "{input}"),
+            ("placeholder", "{agent_scratchpad}")
+        ])
 
-st.title("ASU study partner is here for you!")
-st.subheader("AI-powered chatbot to process YouTube videos and texts")
-st.text("@mosa abdulaziz, for contact: 0122 586 2134 ")
-st.text("powered by gemini pro")
+        self.model = ChatGoogleGenerativeAI(
+            api_key=api_key,
+            model="gemini-1.5-pro",
+            temperature=0
+        )
 
-prompt = ChatPromptTemplate.from_messages([
-    ("system", "You are a helpful assistant."),
-    ("placeholder", "{chat_history}"),
-    ("human", "{input}"),
-    ("placeholder", "{agent_scratchpad}")
-])
+        self.setup_tools()
 
-api_key = st.text_input("Enter your Google API key:", type="password")
-if api_key:
-    model = ChatGoogleGenerativeAI(
-        api_key=api_key,
-        model="gemini-1.5-pro",
-        temperature=0
-    )
-
-
-    @tool
-    def request_from_text(request:str,text: str) -> str:
-        """process a given based on the request given
-                    :parameter request : the user request
-                    :parameter text: text to process
-                    :returns the processed text tailored to user's need"""
-        try:
-            prompting = f"{request}:\n\n{text}"
-            returned_text = model.invoke(prompting)
-            return returned_text.content
-        except Exception:
-            st.error("Error generating summary")
-            return "Unable to get a summary of this video due to an error. Please try another one."
-
-
-    @tool
-    def request_from_url(request:str,url: str) -> str:
-        """process a YouTube video given its URL based on the request given
-            :parameter request : the user request
-            :parameter url: the YouTube video url
-            :returns the processed text tailored to user's need"""
-
-        try:
-            id_ = extract.video_id(url)
-        except Exception:
-            st.error(f"Error extracting video ID")
-            return "Not a valid YouTube video. Please use another link."
-
-        try:
-            txt = YouTubeTranscriptApi.get_transcript(id_, ['ar', 'en'])
-        except youtube_transcript_api.NoTranscriptFound:
-            st.warning("No transcript found for video ID, please refer to this website to get a transcription then ask another prompt, link: https://tactiq.io/tools/youtube-transcript ")
-            return "Error: Please try another video."
-        except Exception:
-            st.error("Error fetching text, please refer to this website to get a transcription then ask another prompt, link: https://tactiq.io/tools/youtube-transcript , or use any other transcript service")
-            return "Error: Unable to fetch video transcript."
-
-        whole_text = "".join(item['text'] for item in txt)
-
-        try:
-            prompting = f"{request}:\n\n{whole_text}"
-            returned_text = model.invoke(prompting)
-            return returned_text.content
-        except Exception:
-            st.error(f"Error generating summary")
-            return "Unable to get a summary of this video due to an error. Please try another one."
-
-    tools = [request_from_url,request_from_text]
-
-    try:
-        agent = create_tool_calling_agent(model, tools, prompt)
-        agent_exec = AgentExecutor(agent=agent, tools=tools, verbose=True)
-    except Exception:
-        st.error(f"Error creating agent")
-        st.stop()
-
-    st.subheader("Ask a question or request a video/text summary")
-    user_input = st.text_input("Enter your question with the YouTube URL:")
-
-    if st.button("Submit"):
-        if user_input:
+    def setup_tools(self):
+        @tool
+        def request_from_text(request: str, text: str) -> str:
+            """Process a given text based on the request given
+            :parameter request: the user request
+            :parameter text: text to process
+            :returns: the processed text tailored to user's need"""
             try:
-                with st.spinner("Processing your request..."):
-                    result = agent_exec.invoke({"input": user_input})
-                st.write(result['output'])
-            except Exception:
-                st.error(f"An error occurred while processing your request, maybe you exhausted your api, wait so it can recharge")
+                prompting = f"{request}:\n\n{text}"
+                returned_text = self.model.invoke(prompting)
+                return returned_text.content
+            except Exception as e:
+                print(f"Error generating summary: {str(e)}")
+                return "Unable to process this text due to an error. Please try another one."
+
+        @tool
+        def request_from_url(request: str, url: str) -> str:
+            """Process a YouTube video given its URL based on the request given
+            :parameter request: the user request
+            :parameter url: the YouTube video url
+            :returns: the processed text tailored to user's need"""
+            try:
+                id_ = extract.video_id(url)
+            except Exception as e:
+                print(f"Error extracting video ID: {str(e)}")
+                return "Not a valid YouTube video. Please use another link."
+
+            try:
+                txt = YouTubeTranscriptApi.get_transcript(id_, ['ar', 'en'])
+            except youtube_transcript_api.NoTranscriptFound:
+                print("No transcript found for video")
+                return "Error: No transcript found. Please try another video or use a transcript service like https://tactiq.io/tools/youtube-transcript"
+            except Exception as e:
+                print(f"Error fetching transcript: {str(e)}")
+                return "Error: Unable to fetch video transcript."
+
+            whole_text = "".join(item['text'] for item in txt)
+
+            try:
+                prompting = f"{request}:\n\n{whole_text}"
+                returned_text = self.model.invoke(prompting)
+                return returned_text.content
+            except Exception as e:
+                print(f"Error processing video content: {str(e)}")
+                return "Unable to process this video due to an error. Please try another one."
+
+        self.tools = [request_from_url, request_from_text]
+
+        try:
+            self.agent = create_tool_calling_agent(self.model, self.tools, self.prompt)
+            self.agent_exec = AgentExecutor(agent=self.agent, tools=self.tools, verbose=True)
+        except Exception as e:
+            print(f"Error creating agent: {str(e)}")
+            raise
+
+    def process_request(self, user_input: str) -> str:
+        """Process a user request
+        :parameter user_input: the user's question/request with URL if applicable
+        :returns: the processed response"""
+        try:
+            result = self.agent_exec.invoke({"input": user_input})
+            return result['output']
+        except Exception as e:
+            print(f"Error processing request: {str(e)}")
+            return "An error occurred while processing your request. Please check your API key or try again later."
+
+
+def main():
+    # Example usage
+    api_key = input("Enter your Google API key: ")
+    processor = YouTubeProcessor(api_key)
+
+    while True:
+        user_input = input("\nEnter your question with the YouTube URL (or 'quit' to exit): ")
+        if user_input.lower() == 'quit':
+            break
+
+        if user_input:
+            result = processor.process_request(user_input)
+            print("\nResult:", result)
         else:
-            st.warning("Please enter a question or YouTube URL.")
-else:
-    st.warning("Please enter your Google API key to use the app.")
+            print("Please enter a question or YouTube URL.")
+
+
+if __name__ == "__main__":
+    main()
